@@ -8,8 +8,13 @@ from random import *
 import numpy as np
 from scipy.signal import blackmanharris, fftconvolve
 from numpy import argmax, sqrt, mean, diff, log
-from matplotlib.mlab import find
 import time
+import wave
+
+def find(condition):
+    res, = np.nonzero(np.ravel(condition))
+    return res
+
 
 def build_default_tuner_range():
     
@@ -84,7 +89,8 @@ tunerNotes = build_default_tuner_range()
 frequencies = np.array(sorted( tunerNotes.keys()) )
 
 def callback(in_data, frame_count, time_info, status):
-    raw_data_signal = np.fromstring( in_data,dtype= np.int16 )
+    # raw_data_signal = np.fromstring( in_data,dtype= np.int16 )
+    raw_data_signal = np.frombuffer( in_data,dtype= np.int16 )
     signal_level = round(abs(loudness(raw_data_signal)),2)               #### find the volume from the audio
     try: 
         inputnote = round(freq_from_autocorr(raw_data_signal,RATE),2)    #### find the freq from the audio
@@ -98,13 +104,13 @@ def callback(in_data, frame_count, time_info, status):
     if signal_level > soundgate:
         return ( raw_data_signal, pyaudio.paContinue )
     targetnote = closest_value_index(frequencies, round(inputnote, 2))
-    print tunerNotes[frequencies[targetnote]]
+    print(tunerNotes[frequencies[targetnote]])
     return ( in_data, pyaudio.paContinue )
 
 # See https://github.com/endolith/waveform-analyzer/blob/master/frequency_estimator.py
-def freq_from_autocorr(raw_data_signal, fs):                          
+def freq_from_autocorr(raw_data_signal, fs):                       
     corr = fftconvolve(raw_data_signal, raw_data_signal[::-1], mode='full')
-    corr = corr[len(corr)/2:]
+    corr = corr[len(corr)//2:]
     d = diff(corr)
     start = find(d > 0)[0]
     peak = argmax(corr[start:]) + start
@@ -138,23 +144,34 @@ def closest_value_index(array, guessValue):
 
     return indexArray[0][0]
 
-def main():
-	p = pyaudio.PyAudio()
-	stream = p.open( format = FORMAT,
-			channels=1,
-			rate = RATE, 
-			input=True,
-			output=False,
-			frames_per_buffer = BUFFERSIZE,
-			stream_callback = callback )
+def read_from_mic():
+    p = pyaudio.PyAudio()
+    stream = p.open( 
+            format = FORMAT,
+            channels=1,
+            rate = RATE, 
+            output=False,
+            input=True,
+            frames_per_buffer = BUFFERSIZE,
+            stream_callback = callback )
 
-	stream.start_stream()
+    stream.start_stream()
 
-	while stream.is_active():
-	    time.sleep( 0.1 )
+    while stream.is_active():
+        time.sleep( 0.1 )
 
-	stream.stop_stream()
-	stream.close()
+    stream.stop_stream()
+    stream.close()
+
+def read_from_wav(file):
+    CHUNK = 1024
+    wf = wave.open(file, 'rb')
+    data = wf.readframes(CHUNK)
+    while data != b'':
+        data = wf.readframes(CHUNK)
+        callback(data, 0, 0, 0)
+
 
 if __name__ == "__main__":
-	main()
+    read_from_wav("GuitarMod.wav")
+    # read_from_mic()
